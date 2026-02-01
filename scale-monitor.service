@@ -1,0 +1,22 @@
+[Unit]
+Description=BLE Scale Monitor - Uploads weight to Apple Health API
+After=bluetooth.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=abhinav
+WorkingDirectory=/home/abhinav/bl-scale
+ExecStart=/home/abhinav/bl-scale/venv/bin/python -u /home/abhinav/bl-scale/scale_client.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
