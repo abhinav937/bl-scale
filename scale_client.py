@@ -24,7 +24,7 @@ INIT_COMMAND = bytearray([
 # ────────────────────────────────────────────────
 # Apple Health API configuration
 # ────────────────────────────────────────────────
-HEALTH_API_URL = "https://ai-reply-bot.vercel.app/api/apple-health"
+HEALTH_API_URL = "https://ai-reply-bot.vercel.app/api/health-api"
 HEALTH_API_KEY = "bzEMsdAELNtAZo4OliH8POjhdOxDzhR_s1dOKSWO7K0"
 
 # ────────────────────────────────────────────────
@@ -280,8 +280,9 @@ class ScaleClient:
 
     async def _upload_weight(self, weight_kg: float):
         """Upload weight to Apple Health API."""
+        # Use UTC timezone to match API's timezone policy
         payload = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
             "weight": round(weight_kg, 2)
         }
         headers = {

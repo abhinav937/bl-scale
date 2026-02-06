@@ -38,7 +38,9 @@ Single-file Python application (`scale_client.py`) using asyncio:
 - **ScaleClient class**: Manages BLE connection lifecycle with state machine (IDLE → SCANNING → CONNECTING → CONNECTED)
 - **BLE Protocol**: Chipsea scale uses FFF0 service with FFF1/FFF4 (notify) and FFF2/FFF5 (write) characteristics
 - **Weight Parsing**: Protocol bytes `CA A0 [type] 02 [indicator] [high] [low]` where type F4 + indicator 05 = stable reading
-- **Upload**: POSTs `{date, weight}` to Health API with X-API-Key header
+- **Upload**: POSTs `{date, weight}` to Health API endpoint (`/api/health-api`) with X-API-Key authentication
+  - Date field uses UTC timezone (YYYY-MM-DD format)
+  - Date is optional; API defaults to current UTC date if omitted
 
 ## Configuration
 

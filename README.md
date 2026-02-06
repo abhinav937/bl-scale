@@ -24,7 +24,7 @@ Edit `scale_client.py` to set your scale's MAC address and API credentials:
 
 ```python
 SCALE_ADDRESS = "DE:E7:54:8A:87:0A"  # Your scale's BLE address
-HEALTH_API_URL = "https://your-api.com/api/apple-health"
+HEALTH_API_URL = "https://ai-reply-bot.vercel.app/api/health-api"
 HEALTH_API_KEY = "your-api-key"
 ```
 
