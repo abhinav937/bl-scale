@@ -39,7 +39,7 @@ Single-file Python application (`scale_client.py`) using asyncio:
 - **BLE Protocol**: Chipsea scale uses FFF0 service with FFF1/FFF4 (notify) and FFF2/FFF5 (write) characteristics
 - **Weight Parsing**: Protocol bytes `CA A0 [type] 02 [indicator] [high] [low]` where type F4 + indicator 05 = stable reading
 - **Upload**: POSTs `{date, weight}` to Health API endpoint (`/api/health-api`) with X-API-Key authentication
-  - Date field uses UTC timezone (YYYY-MM-DD format)
+  - Date field uses Raspberry Pi's local time (YYYY-MM-DD format)
   - Date is optional; API defaults to current UTC date if omitted
 
 ## Configuration

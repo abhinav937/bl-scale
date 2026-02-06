@@ -280,9 +280,9 @@ class ScaleClient:
 
     async def _upload_weight(self, weight_kg: float):
         """Upload weight to Apple Health API."""
-        # Use UTC timezone to match API's timezone policy
+        # Use local Raspberry Pi time
         payload = {
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "date": datetime.now().strftime("%Y-%m-%d"),
             "weight": round(weight_kg, 2)
         }
         headers = {
