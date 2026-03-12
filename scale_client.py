@@ -229,8 +229,10 @@ class ScaleClient:
     async def setup_and_monitor(self, client: BleakClient):
         """Setup notifications and monitor for weight data."""
         try:
-            # Discover services
-            services = client.services
+            # Explicitly discover services — required on Linux/BlueZ before
+            # client.services is populated (accessing it before this is a no-op)
+            print("Discovering services...")
+            services = await client.get_services()
 
             # Find FFF0 service
             target_service = None
@@ -273,7 +275,7 @@ class ScaleClient:
                 await asyncio.sleep(0.5)
 
         except Exception as e:
-            print(f"Communication error: {e}")
+            print(f"Communication error: {type(e).__name__}: {e}")
         finally:
             # If there's an in-flight upload when the connection drops,
             # wait for it to finish so we don't lose the measurement.
