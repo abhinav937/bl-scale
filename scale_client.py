@@ -319,6 +319,7 @@ class ScaleClient:
             "date": datetime.now().strftime("%Y-%m-%d"),
             "weight": round(weight_kg, 2)
         }
+        headers = {
             "X-API-Key": HEALTH_API_KEY,
             "Content-Type": "application/json"
         }
