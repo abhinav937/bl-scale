@@ -125,25 +125,34 @@ class ScaleClient:
             print(f"Found: {device.name or 'Unnamed'} ({device.address})")
 
             # Connect IMMEDIATELY (no sleep!)
-            return await self._connect_to_device(device)
+            # Pass address string, not BLEDevice object — after scanner.stop()
+            # BlueZ flushes its device cache so the BLEDevice handle goes stale.
+            # Using the address string lets BlueZ do its own lookup at connect time.
+            return await self._connect_to_device(device.address)
 
         except Exception as e:
             print(f"Scan error: {e}")
             self.state = ConnectionState.IDLE
             return None
 
-    async def _connect_to_device(self, device: BLEDevice) -> Optional[BleakClient]:
-        """Connect to device with retry logic. Retry delay only on failure."""
+    async def _connect_to_device(self, device) -> Optional[BleakClient]:
+        """Connect to device with retry logic. Retry delay only on failure.
+
+        `device` may be a BLEDevice or a plain MAC address string.
+        We normalise to address string so the connection attempt isn't
+        affected by BlueZ flushing its device cache after scanner.stop().
+        """
+        address = device if isinstance(device, str) else device.address
         self.state = ConnectionState.CONNECTING
 
         for attempt in range(MAX_RETRIES):
             suffix = f" (attempt {attempt + 1})" if attempt > 0 else ""
-            print(f"Connecting to {device.address}...{suffix}")
+            print(f"Connecting to {address}...{suffix}")
 
             client = None
             try:
                 client = BleakClient(
-                    device,
+                    address,
                     disconnected_callback=self._on_disconnect,
                     timeout=CONNECT_TIMEOUT
                 )
@@ -165,7 +174,11 @@ class ScaleClient:
                     print(f"DBus error: {e}")
 
             except (BleakError, TimeoutError, asyncio.TimeoutError) as e:
+                error_str = str(e)
                 print(f"Connection failed: {e}")
+                # Device went back to sleep — no point retrying, go scan again
+                if "not found" in error_str:
+                    break
 
             except Exception as e:
                 print(f"Error: {type(e).__name__}: {e}")
