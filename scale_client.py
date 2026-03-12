@@ -197,6 +197,10 @@ class ScaleClient:
     async def setup_and_monitor(self, client: BleakClient):
         """Setup notifications and monitor for weight data."""
         try:
+            # Small delay to let BlueZ finish internal service discovery
+            # before we read client.services (empty otherwise on Linux)
+            await asyncio.sleep(1.0)
+
             # Discover services
             services = client.services
 
