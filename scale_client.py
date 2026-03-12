@@ -25,7 +25,9 @@ INIT_COMMAND = bytearray([
 # Apple Health API configuration
 # ────────────────────────────────────────────────
 HEALTH_API_URL = "https://ai-reply-bot.vercel.app/api/health-api"
+ACTIVE_PROFILE_URL = "https://ai-reply-bot.vercel.app/api/active-profile"
 HEALTH_API_KEY = "bzEMsdAELNtAZo4OliH8POjhdOxDzhR_s1dOKSWO7K0"
+DEFAULT_PROFILE = "default"
 
 # ────────────────────────────────────────────────
 # Connection constants
@@ -278,24 +280,59 @@ class ScaleClient:
 
         return None, False
 
+    async def _get_active_profile(self, session: aiohttp.ClientSession) -> str:
+        """Fetch who's next from the active-profile API. Falls back to default."""
+        try:
+            async with session.get(ACTIVE_PROFILE_URL) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    profile = data.get("profileId", DEFAULT_PROFILE)
+                    print(f"Active profile: {profile}")
+                    return profile
+        except Exception as e:
+            print(f"Could not fetch active profile (using default): {e}")
+        return DEFAULT_PROFILE
+
+    async def _reset_active_profile(self, session: aiohttp.ClientSession):
+        """Reset active profile back to default after a successful upload."""
+        try:
+            headers = {
+                "X-API-Key": HEALTH_API_KEY,
+                "Content-Type": "application/json"
+            }
+            async with session.post(
+                ACTIVE_PROFILE_URL,
+                json={"profileId": DEFAULT_PROFILE},
+                headers=headers
+            ) as resp:
+                if resp.status == 200:
+                    print("Active profile reset to default")
+        except Exception as e:
+            print(f"Could not reset active profile: {e}")
+
     async def _upload_weight(self, weight_kg: float):
-        """Upload weight to Apple Health API."""
-        # Use local Raspberry Pi time
-        payload = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "weight": round(weight_kg, 2)
-        }
+        """Upload weight to Apple Health API under the active profile."""
         headers = {
             "X-API-Key": HEALTH_API_KEY,
             "Content-Type": "application/json"
         }
+        payload = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "weight": round(weight_kg, 2)
+        }
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(HEALTH_API_URL, json=payload, headers=headers) as resp:
+                # 1. Who's stepping on?
+                profile_id = await self._get_active_profile(session)
+
+                # 2. Upload weight to that profile
+                url = f"{HEALTH_API_URL}?profileId={profile_id}"
+                async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status == 200:
-                        result = await resp.json()
-                        print(f"Uploaded: {weight_kg:.2f} kg")
+                        print(f"Uploaded: {weight_kg:.2f} kg → profile '{profile_id}'")
+                        # 3. Reset so the next person doesn't get misrouted
+                        await self._reset_active_profile(session)
                     else:
                         text = await resp.text()
                         print(f"Upload failed ({resp.status}): {text}")
