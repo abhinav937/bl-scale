@@ -197,10 +197,7 @@ class ScaleClient:
     async def setup_and_monitor(self, client: BleakClient):
         """Setup notifications and monitor for weight data."""
         try:
-            # Wait for BlueZ to finish background service discovery
-            await asyncio.sleep(1.0)
-
-            # Discover services
+            # Discover services — no sleep, the scale disconnects if we wait
             services = client.services
 
             # Find FFF0 service
@@ -244,7 +241,7 @@ class ScaleClient:
                 await asyncio.sleep(0.5)
 
         except Exception as e:
-            print(f"Communication error: {e}")
+            print(f"Communication error: {type(e).__name__}: {e}")
 
     def _on_notification(self, sender, data: bytearray):
         """Handle weight data notifications."""
