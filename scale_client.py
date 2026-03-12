@@ -24,25 +24,31 @@ INIT_COMMAND = bytearray([
 # ────────────────────────────────────────────────
 # Apple Health API configuration
 # ────────────────────────────────────────────────
-HEALTH_API_URL = "https://ai-reply-bot.vercel.app/api/health-api"
+HEALTH_API_URL     = "https://ai-reply-bot.vercel.app/api/health-api"
 ACTIVE_PROFILE_URL = "https://ai-reply-bot.vercel.app/api/active-profile"
-HEALTH_API_KEY = "bzEMsdAELNtAZo4OliH8POjhdOxDzhR_s1dOKSWO7K0"
-DEFAULT_PROFILE = "default"
+HEALTH_API_KEY     = "bzEMsdAELNtAZo4OliH8POjhdOxDzhR_s1dOKSWO7K0"
+DEFAULT_PROFILE    = "default"
 
 # ────────────────────────────────────────────────
 # Connection constants
 # ────────────────────────────────────────────────
-SCAN_TIMEOUT = 60.0      # How long to wait for scale to appear
+SCAN_TIMEOUT    = 60.0   # How long to wait for scale to appear
 CONNECT_TIMEOUT = 10.0   # Connection timeout
-RETRY_DELAY = 2.0        # Delay only on failure (like iOS)
-MAX_RETRIES = 3
+RETRY_DELAY     = 2.0    # Delay only on failure (like iOS)
+MAX_RETRIES     = 3
+
+# HTTP timeout — prevents hanging forever if Vercel is slow
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
+# How many seconds to wait for the BT adapter on boot before giving up
+BT_ADAPTER_WAIT = 30.0
 
 
 class ConnectionState(Enum):
-    IDLE = "idle"
-    SCANNING = "scanning"
+    IDLE       = "idle"
+    SCANNING   = "scanning"
     CONNECTING = "connecting"
-    CONNECTED = "connected"
+    CONNECTED  = "connected"
 
 
 async def clear_bluez_cache(address: str):
@@ -57,6 +63,29 @@ async def clear_bluez_cache(address: str):
         await asyncio.sleep(0.3)
     except Exception:
         pass  # Non-fatal - device may not exist in cache
+
+
+async def wait_for_bt_adapter(timeout: float = BT_ADAPTER_WAIT) -> bool:
+    """
+    Poll until a Bluetooth adapter is available (hci0 exists).
+    Returns True if adapter found, False if timed out.
+    Handles the common Pi boot race where bluetoothd isn't ready yet.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "hciconfig",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3.0)
+            if b"hci0" in stdout:
+                return True
+        except Exception:
+            pass
+        await asyncio.sleep(2.0)
+    return False
 
 
 class ScaleClient:
@@ -75,6 +104,9 @@ class ScaleClient:
         # Weight tracking
         self.current_weight_kg: Optional[float] = None
         self._stable_weight_uploaded = False
+
+        # Track in-flight upload task so we can await it on shutdown
+        self._upload_task: Optional[asyncio.Task] = None
 
     async def scan_and_connect(self) -> Optional[BleakClient]:
         """
@@ -242,6 +274,15 @@ class ScaleClient:
 
         except Exception as e:
             print(f"Communication error: {e}")
+        finally:
+            # If there's an in-flight upload when the connection drops,
+            # wait for it to finish so we don't lose the measurement.
+            if self._upload_task and not self._upload_task.done():
+                print("Waiting for upload to complete...")
+                try:
+                    await asyncio.wait_for(self._upload_task, timeout=20.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    print("Upload task did not finish in time")
 
     def _on_notification(self, sender, data: bytearray):
         """Handle weight data notifications."""
@@ -256,7 +297,8 @@ class ScaleClient:
                 # Upload once per measurement session
                 if not self._stable_weight_uploaded:
                     self._stable_weight_uploaded = True
-                    asyncio.create_task(self._upload_weight(weight))
+                    # Store task reference so setup_and_monitor can await it
+                    self._upload_task = asyncio.create_task(self._upload_weight(weight))
 
     def _parse_weight(self, data: bytearray) -> tuple[Optional[float], bool]:
         """Parse weight from BLE packet. Returns (weight_kg, is_stable)."""
@@ -322,7 +364,7 @@ class ScaleClient:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
                 # 1. Who's stepping on?
                 profile_id = await self._get_active_profile(session)
 
@@ -336,6 +378,11 @@ class ScaleClient:
                     else:
                         text = await resp.text()
                         print(f"Upload failed ({resp.status}): {text}")
+        except asyncio.TimeoutError:
+            print("Upload timed out — will retry next measurement")
+        except asyncio.CancelledError:
+            print("Upload cancelled (service stopping)")
+            raise  # re-raise so the task is properly marked cancelled
         except Exception as e:
             print(f"Upload error: {e}")
 
@@ -354,6 +401,14 @@ async def main():
     print("Step on the scale to take a measurement")
     print()
 
+    # Wait for Bluetooth adapter before entering main loop.
+    # Handles Pi boot race where bluetoothd takes a few seconds to start.
+    print("Checking Bluetooth adapter...")
+    if not await wait_for_bt_adapter():
+        print("ERROR: No Bluetooth adapter found after waiting. Exiting.")
+        return
+    print("Bluetooth adapter ready.")
+
     try:
         while True:
             if scale.state == ConnectionState.IDLE:
@@ -369,7 +424,16 @@ async def main():
 
     except KeyboardInterrupt:
         print("\nStopped by user")
+    except asyncio.CancelledError:
+        print("\nService stopping...")
     finally:
+        # Wait for any in-flight upload before exiting cleanly
+        if scale._upload_task and not scale._upload_task.done():
+            print("Waiting for upload to complete before exit...")
+            try:
+                await asyncio.wait_for(scale._upload_task, timeout=20.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                print("Upload did not finish in time, exiting anyway")
         if scale.client and scale.client.is_connected:
             await scale.client.disconnect()
         print("Cleanup done.")

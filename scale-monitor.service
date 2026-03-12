@@ -1,19 +1,31 @@
 [Unit]
 Description=BLE Scale Monitor - Uploads weight to Apple Health API
-After=bluetooth.target network-online.target
-Wants=network-online.target
+# Wait for bluetooth stack AND network to be fully ready
+After=bluetooth.service network-online.target time-sync.target
+Requires=bluetooth.service network-online.target
+Wants=time-sync.target
 
 [Service]
 Type=simple
 User=abhinav
 WorkingDirectory=/home/abhinav/bl-scale
 ExecStart=/home/abhinav/bl-scale/venv/bin/python -u /home/abhinav/bl-scale/scale_client.py
-Restart=always
+
+# Give bluetooth adapter extra time to settle on boot
+ExecStartPre=/bin/sleep 5
+
+# Restart on failure only (not on clean exit / manual stop)
+Restart=on-failure
 RestartSec=10
+
+# Back off after 5 crashes in 2 minutes — prevents hammering BT adapter
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 # Logging
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=scale-monitor
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
