@@ -197,8 +197,7 @@ class ScaleClient:
     async def setup_and_monitor(self, client: BleakClient):
         """Setup notifications and monitor for weight data."""
         try:
-            # Small delay to let BlueZ finish internal service discovery
-            # before we read client.services (empty otherwise on Linux)
+            # Wait for BlueZ to finish background service discovery
             await asyncio.sleep(1.0)
 
             # Discover services
@@ -316,13 +315,12 @@ class ScaleClient:
 
     async def _upload_weight(self, weight_kg: float):
         """Upload weight to Apple Health API under the active profile."""
-        headers = {
-            "X-API-Key": HEALTH_API_KEY,
-            "Content-Type": "application/json"
-        }
         payload = {
             "date": datetime.now().strftime("%Y-%m-%d"),
             "weight": round(weight_kg, 2)
+        }
+            "X-API-Key": HEALTH_API_KEY,
+            "Content-Type": "application/json"
         }
 
         try:
@@ -330,12 +328,12 @@ class ScaleClient:
                 # 1. Who's stepping on?
                 profile_id = await self._get_active_profile(session)
 
-                # 2. Upload weight to that profile
+                # 2. Upload to that profile
                 url = f"{HEALTH_API_URL}?profileId={profile_id}"
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status == 200:
                         print(f"Uploaded: {weight_kg:.2f} kg → profile '{profile_id}'")
-                        # 3. Reset so the next person doesn't get misrouted
+                        # 3. Reset so next person isn't misrouted
                         await self._reset_active_profile(session)
                     else:
                         text = await resp.text()
