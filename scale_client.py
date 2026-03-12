@@ -32,17 +32,17 @@ DEFAULT_PROFILE    = "default"
 # ────────────────────────────────────────────────
 # Connection constants
 # ────────────────────────────────────────────────
-SCAN_TIMEOUT    = 60.0   # How long to wait for scale to appear
+SCAN_TIMEOUT = 60.0      # How long to wait for scale to appear
 CONNECT_TIMEOUT = 10.0   # Connection timeout
-RETRY_DELAY     = 2.0    # Delay only on failure (like iOS)
-MAX_RETRIES     = 3
+RETRY_DELAY = 2.0        # Delay only on failure (like iOS)
+MAX_RETRIES = 3
 
 
 class ConnectionState(Enum):
-    IDLE       = "idle"
-    SCANNING   = "scanning"
+    IDLE = "idle"
+    SCANNING = "scanning"
     CONNECTING = "connecting"
-    CONNECTED  = "connected"
+    CONNECTED = "connected"
 
 
 async def clear_bluez_cache(address: str):
@@ -197,7 +197,7 @@ class ScaleClient:
     async def setup_and_monitor(self, client: BleakClient):
         """Setup notifications and monitor for weight data."""
         try:
-            # Discover services — no sleep, the scale disconnects if we wait
+            # Discover services
             services = client.services
 
             # Find FFF0 service
@@ -241,7 +241,7 @@ class ScaleClient:
                 await asyncio.sleep(0.5)
 
         except Exception as e:
-            print(f"Communication error: {type(e).__name__}: {e}")
+            print(f"Communication error: {e}")
 
     def _on_notification(self, sender, data: bytearray):
         """Handle weight data notifications."""
