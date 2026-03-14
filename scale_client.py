@@ -310,15 +310,37 @@ class ScaleClient:
         except Exception as e:
             print(f"Could not reset active profile: {e}")
 
-    async def _upload_weight(self, weight_kg: float):
-        """Upload weight to Apple Health API under the active profile."""
+    async def _upload_phantom(self, session: aiohttp.ClientSession):
+        """Send a phantom-recorded payload — real weight is discarded."""
         payload = {
             "date": datetime.now().strftime("%Y-%m-%d"),
-            "weight": round(weight_kg, 2)
+            "phantom": True,
         }
         headers = {
             "X-API-Key": HEALTH_API_KEY,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+        }
+        url = f"{HEALTH_API_URL}?profileId=phantom"
+        try:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status == 200:
+                    print("Phantom weigh-in recorded (no real data stored)")
+                else:
+                    text = await resp.text()
+                    print(f"Phantom upload failed ({resp.status}): {text}")
+        except Exception as e:
+            print(f"Phantom upload error: {e}")
+
+    async def _upload_weight(self, weight_kg: float):
+        """Upload weight to Apple Health API under the active profile.
+
+        If the active profile is 'phantom', the real weight is discarded and
+        a phantom payload is sent instead so the scale session is acknowledged
+        without persisting any personal data.
+        """
+        headers = {
+            "X-API-Key": HEALTH_API_KEY,
+            "Content-Type": "application/json",
         }
 
         try:
@@ -326,12 +348,23 @@ class ScaleClient:
                 # 1. Who's stepping on?
                 profile_id = await self._get_active_profile(session)
 
-                # 2. Upload to that profile
+                # 2. Phantom mode — discard real weight, send phantom ping
+                if profile_id == "phantom":
+                    print("Phantom mode active — real weight discarded")
+                    await self._upload_phantom(session)
+                    await self._reset_active_profile(session)
+                    return
+
+                # 3. Normal upload to the real profile
+                payload = {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "weight": round(weight_kg, 2),
+                }
                 url = f"{HEALTH_API_URL}?profileId={profile_id}"
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status == 200:
                         print(f"Uploaded: {weight_kg:.2f} kg → profile '{profile_id}'")
-                        # 3. Reset so next person isn't misrouted
+                        # 4. Reset so next person isn't misrouted
                         await self._reset_active_profile(session)
                     else:
                         text = await resp.text()
